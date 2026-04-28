@@ -630,12 +630,17 @@ async function initializeApp() {
   loader.setProgress(100);
   await sleep(200);
 
-  // Dismiss loading screen and start simulation
+  // Dismiss loading screen, then render once after the visible layout settles.
   loader.dismiss();
+  await nextFrame();
+  resizeCanvas();
+  fitView();
+  draw();
   initSimulation();
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function nextFrame() { return new Promise(r => requestAnimationFrame(r)); }
 
 // ── Canvas setup ──────────────────────────────────────────────────────────────
 const canvasEl = document.getElementById('canvas');
