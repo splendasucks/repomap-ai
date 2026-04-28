@@ -56,7 +56,12 @@ def _format_node_summary(node, edges: list, max_edges: int = 10) -> str:
     return "\n".join(lines)
 
 
-def create_mcp_server(repo_root: str | None = None) -> Any:
+def create_mcp_server(
+    repo_root: str | None = None,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+) -> Any:
     """Create and return a configured FastMCP server instance."""
     from mcp.server.fastmcp import FastMCP
 
@@ -67,6 +72,8 @@ def create_mcp_server(repo_root: str | None = None) -> Any:
             "Use these tools to understand the codebase before making changes, "
             "find entry points, trace data model relationships, and assess impact."
         ),
+        host=host,
+        port=port,
     )
 
     # Lazy engine — shared across tool calls within one server session
@@ -423,5 +430,5 @@ def run_stdio(repo_root: str | None = None) -> None:
 
 def run_http(host: str = "127.0.0.1", port: int = 3847, repo_root: str | None = None) -> None:
     """Run the MCP server in HTTP/SSE mode."""
-    mcp = create_mcp_server(repo_root=repo_root)
-    mcp.run(transport="streamable-http", host=host, port=port)
+    mcp = create_mcp_server(repo_root=repo_root, host=host, port=port)
+    mcp.run(transport="streamable-http")

@@ -410,6 +410,7 @@ let nodeMap = {};
 let minimapCounter = 0;
 let simWorker = null;
 let useWebGL = false;
+let viewEpoch = 0;
 
 // ── Performance thresholds ────────────────────────────────────────────────────
 const LARGE_GRAPH = 500;
@@ -476,9 +477,13 @@ function runSimTick(cx, cy, alpha) {
     for(const k in mc){mc[k].x/=mc[k].c;mc[k].y/=mc[k].c;}
     for(let i=0;i<nodes.length;i++){const n=nodes[i],c=mc[n.module||'root'];n.vx+=(c.x-n.x)*0.02*alpha;n.vy+=(c.y-n.y)*0.02*alpha;}
   }
+  const maxStep=48;
   for(let i=0;i<nodes.length;i++){
     const n=nodes[i]; if(n.id===draggingId)continue;
-    n.vx*=0.7;n.vy*=0.7;n.x+=n.vx;n.y+=n.vy;
+    n.vx*=0.7;n.vy*=0.7;
+    const speed=Math.hypot(n.vx,n.vy);
+    if(speed>maxStep){const s=maxStep/speed;n.vx*=s;n.vy*=s;}
+    n.x+=n.vx;n.y+=n.vy;
   }
 }
 
@@ -611,8 +616,8 @@ async function initializeApp() {
   loader.setProgress(80);
   await sleep(50);
 
-  // Create Web Worker for off-thread simulation
-  simWorker = createSimWorker();
+  // Keep small graphs on the main thread; the worker is only needed at scale.
+  simWorker = nodes.length > LARGE_GRAPH ? createSimWorker() : null;
 
   // Run pre-render ticks asynchronously (adaptive count, yield every 5)
   const preTicks = Math.min(30, Math.max(10, Math.floor(8000 / nodes.length)));
@@ -630,12 +635,17 @@ async function initializeApp() {
   loader.setProgress(100);
   await sleep(200);
 
-  // Dismiss loading screen and start simulation
+  // Dismiss loading screen, then render once after the visible layout settles.
   loader.dismiss();
+  await nextFrame();
+  resizeCanvas();
+  fitView();
+  draw();
   initSimulation();
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function nextFrame() { return new Promise(r => requestAnimationFrame(r)); }
 
 // ── Canvas setup ──────────────────────────────────────────────────────────────
 const canvasEl = document.getElementById('canvas');
@@ -735,7 +745,7 @@ function initWebGL(){
 }
 
 function setupCanvas() {
-  useWebGL = initWebGL();
+  useWebGL = nodes.length > LARGE_GRAPH && initWebGL();
   if (!useWebGL) ctx = canvasEl.getContext('2d');
   resizeCanvas();
   window.addEventListener('resize', () => { resizeCanvas(); fitView(); });
@@ -837,15 +847,23 @@ function runSimTick(cx, cy, alpha) {
 
   // Apply velocity + damping
   const damping = 0.7;
+  const maxStep = 48;
   nodes.forEach(n => {
     if (n === dragging) return;
     n.vx *= damping; n.vy *= damping;
+    const speed = Math.hypot(n.vx, n.vy);
+    if (speed > maxStep) {
+      const scale = maxStep / speed;
+      n.vx *= scale;
+      n.vy *= scale;
+    }
     n.x += n.vx; n.y += n.vy;
   });
 }
 
 // ── Simulation (Worker or main-thread fallback) ──────────────────────────────
 function initSimulation() {
+  const epoch = viewEpoch;
   const W = canvasEl.clientWidth, H = canvasEl.clientHeight;
   const cx = W / 2, cy = H / 2;
 
@@ -874,6 +892,7 @@ function initSimulation() {
   const subTicks = n > HUGE_GRAPH ? 1 : (n > LARGE_GRAPH ? 2 : 3);
 
   function tick() {
+    if (epoch !== viewEpoch || currentView !== 'graph') return;
     for (let s = 0; s < subTicks; s++) {
       if (alpha < alphaMin || tickCount >= maxTicks) { draw(); animFrame = null; return; }
       alpha *= (1 - alphaDecay);
@@ -885,6 +904,20 @@ function initSimulation() {
   }
   if (animFrame && animFrame !== 1) cancelAnimationFrame(animFrame);
   animFrame = requestAnimationFrame(tick);
+}
+
+function resetGraphLayout() {
+  const W = canvasEl.clientWidth || 800, H = canvasEl.clientHeight || 600;
+  const cx = W / 2, cy = H / 2;
+  const r = Math.min(W, H) * 0.35;
+  nodes.forEach((n, i) => {
+    const angle = (i / Math.max(nodes.length, 1)) * 2 * Math.PI;
+    n.x = cx + r * Math.cos(angle);
+    n.y = cy + r * Math.sin(angle);
+    n.vx = 0;
+    n.vy = 0;
+  });
+  fitView();
 }
 
 // ── Drawing ───────────────────────────────────────────────────────────────────
@@ -1248,6 +1281,7 @@ function setupInteractions() {
   // View toggle
   document.querySelectorAll('.view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      viewEpoch++;
       document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentView = btn.dataset.view;
@@ -1261,7 +1295,10 @@ function setupInteractions() {
         canvasCont.style.display = '';
         treePanel.classList.remove('active');
         if (currentView === 'modules') initModuleView();
-        else initSimulation();
+        else {
+          resetGraphLayout();
+          initSimulation();
+        }
       }
     });
   });
@@ -1404,7 +1441,9 @@ function escHtml(s) {
 
 // ── Module view ───────────────────────────────────────────────────────────────
 function initModuleView() {
+  const epoch = viewEpoch;
   const W = canvasEl.clientWidth, H = canvasEl.clientHeight;
+  transform = { x: 0, y: 0, scale: 1 };
   const moduleGroups = {};
   nodes.forEach(n => {
     const m = n.module || 'root';
@@ -1427,6 +1466,7 @@ function initModuleView() {
   });
   let alpha = 0.5;
   function tick() {
+    if (epoch !== viewEpoch || currentView !== 'modules') return;
     alpha *= 0.9;
     if (alpha < 0.01) { draw(); return; }
     nodes.forEach(n => {
@@ -1477,7 +1517,8 @@ function buildTreeView(filter) {
       <div class="tree-children ${isOpen ? 'open' : ''}" id="${groupId}">`;
 
     filtered.forEach(n => {
-      html += `<div class="tree-sym" onclick="treeSelectNode('${n.id}')" id="ts-${n.id.replace(/[^a-z0-9]/gi,'_')}">
+      const nodeId = String(n.id);
+      html += `<div class="tree-sym" onclick="treeSelectNode('${escHtml(nodeId)}')" id="ts-${nodeId.replace(/[^a-z0-9]/gi,'_')}">
         <span class="tree-sym-kind ${n.kind}">${n.kind}</span>
         <span>${escHtml(n.name)}</span>
         ${n.is_entry_point ? '<span style="color:var(--amber);font-size:10px">★</span>' : ''}
@@ -1502,11 +1543,12 @@ function treeToggle(id, headerEl) {
 function treeSelectNode(nodeId) {
   // Deselect old
   document.querySelectorAll('.tree-sym.selected').forEach(el => el.classList.remove('selected'));
-  const tsId = 'ts-' + nodeId.replace(/[^a-z0-9]/gi,'_');
+  const id = String(nodeId);
+  const tsId = 'ts-' + id.replace(/[^a-z0-9]/gi,'_');
   const el = document.getElementById(tsId);
   if (el) el.classList.add('selected');
 
-  const n = nodes.find(x => x.id === nodeId);
+  const n = nodes.find(x => String(x.id) === id);
   if (n) { selectedNode = n; buildNeighborSet(n); showSidebar(n); }
 }
 
