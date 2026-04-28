@@ -740,7 +740,7 @@ function initWebGL(){
 }
 
 function setupCanvas() {
-  useWebGL = initWebGL();
+  useWebGL = nodes.length > LARGE_GRAPH && initWebGL();
   if (!useWebGL) ctx = canvasEl.getContext('2d');
   resizeCanvas();
   window.addEventListener('resize', () => { resizeCanvas(); fitView(); });
