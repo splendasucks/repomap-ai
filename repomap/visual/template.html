@@ -476,9 +476,13 @@ function runSimTick(cx, cy, alpha) {
     for(const k in mc){mc[k].x/=mc[k].c;mc[k].y/=mc[k].c;}
     for(let i=0;i<nodes.length;i++){const n=nodes[i],c=mc[n.module||'root'];n.vx+=(c.x-n.x)*0.02*alpha;n.vy+=(c.y-n.y)*0.02*alpha;}
   }
+  const maxStep=48;
   for(let i=0;i<nodes.length;i++){
     const n=nodes[i]; if(n.id===draggingId)continue;
-    n.vx*=0.7;n.vy*=0.7;n.x+=n.vx;n.y+=n.vy;
+    n.vx*=0.7;n.vy*=0.7;
+    const speed=Math.hypot(n.vx,n.vy);
+    if(speed>maxStep){const s=maxStep/speed;n.vx*=s;n.vy*=s;}
+    n.x+=n.vx;n.y+=n.vy;
   }
 }
 
@@ -842,9 +846,16 @@ function runSimTick(cx, cy, alpha) {
 
   // Apply velocity + damping
   const damping = 0.7;
+  const maxStep = 48;
   nodes.forEach(n => {
     if (n === dragging) return;
     n.vx *= damping; n.vy *= damping;
+    const speed = Math.hypot(n.vx, n.vy);
+    if (speed > maxStep) {
+      const scale = maxStep / speed;
+      n.vx *= scale;
+      n.vy *= scale;
+    }
     n.x += n.vx; n.y += n.vy;
   });
 }
