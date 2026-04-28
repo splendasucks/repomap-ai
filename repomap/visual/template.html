@@ -1477,7 +1477,8 @@ function buildTreeView(filter) {
       <div class="tree-children ${isOpen ? 'open' : ''}" id="${groupId}">`;
 
     filtered.forEach(n => {
-      html += `<div class="tree-sym" onclick="treeSelectNode('${n.id}')" id="ts-${n.id.replace(/[^a-z0-9]/gi,'_')}">
+      const nodeId = String(n.id);
+      html += `<div class="tree-sym" onclick="treeSelectNode('${escHtml(nodeId)}')" id="ts-${nodeId.replace(/[^a-z0-9]/gi,'_')}">
         <span class="tree-sym-kind ${n.kind}">${n.kind}</span>
         <span>${escHtml(n.name)}</span>
         ${n.is_entry_point ? '<span style="color:var(--amber);font-size:10px">★</span>' : ''}
@@ -1502,11 +1503,12 @@ function treeToggle(id, headerEl) {
 function treeSelectNode(nodeId) {
   // Deselect old
   document.querySelectorAll('.tree-sym.selected').forEach(el => el.classList.remove('selected'));
-  const tsId = 'ts-' + nodeId.replace(/[^a-z0-9]/gi,'_');
+  const id = String(nodeId);
+  const tsId = 'ts-' + id.replace(/[^a-z0-9]/gi,'_');
   const el = document.getElementById(tsId);
   if (el) el.classList.add('selected');
 
-  const n = nodes.find(x => x.id === nodeId);
+  const n = nodes.find(x => String(x.id) === id);
   if (n) { selectedNode = n; buildNeighborSet(n); showSidebar(n); }
 }
 
