@@ -611,8 +611,8 @@ async function initializeApp() {
   loader.setProgress(80);
   await sleep(50);
 
-  // Create Web Worker for off-thread simulation
-  simWorker = createSimWorker();
+  // Keep small graphs on the main thread; the worker is only needed at scale.
+  simWorker = nodes.length > LARGE_GRAPH ? createSimWorker() : null;
 
   // Run pre-render ticks asynchronously (adaptive count, yield every 5)
   const preTicks = Math.min(30, Math.max(10, Math.floor(8000 / nodes.length)));
