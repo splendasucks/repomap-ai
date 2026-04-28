@@ -410,6 +410,7 @@ let nodeMap = {};
 let minimapCounter = 0;
 let simWorker = null;
 let useWebGL = false;
+let viewEpoch = 0;
 
 // ── Performance thresholds ────────────────────────────────────────────────────
 const LARGE_GRAPH = 500;
@@ -862,6 +863,7 @@ function runSimTick(cx, cy, alpha) {
 
 // ── Simulation (Worker or main-thread fallback) ──────────────────────────────
 function initSimulation() {
+  const epoch = viewEpoch;
   const W = canvasEl.clientWidth, H = canvasEl.clientHeight;
   const cx = W / 2, cy = H / 2;
 
@@ -890,6 +892,7 @@ function initSimulation() {
   const subTicks = n > HUGE_GRAPH ? 1 : (n > LARGE_GRAPH ? 2 : 3);
 
   function tick() {
+    if (epoch !== viewEpoch || currentView !== 'graph') return;
     for (let s = 0; s < subTicks; s++) {
       if (alpha < alphaMin || tickCount >= maxTicks) { draw(); animFrame = null; return; }
       alpha *= (1 - alphaDecay);
@@ -901,6 +904,20 @@ function initSimulation() {
   }
   if (animFrame && animFrame !== 1) cancelAnimationFrame(animFrame);
   animFrame = requestAnimationFrame(tick);
+}
+
+function resetGraphLayout() {
+  const W = canvasEl.clientWidth || 800, H = canvasEl.clientHeight || 600;
+  const cx = W / 2, cy = H / 2;
+  const r = Math.min(W, H) * 0.35;
+  nodes.forEach((n, i) => {
+    const angle = (i / Math.max(nodes.length, 1)) * 2 * Math.PI;
+    n.x = cx + r * Math.cos(angle);
+    n.y = cy + r * Math.sin(angle);
+    n.vx = 0;
+    n.vy = 0;
+  });
+  fitView();
 }
 
 // ── Drawing ───────────────────────────────────────────────────────────────────
@@ -1264,6 +1281,7 @@ function setupInteractions() {
   // View toggle
   document.querySelectorAll('.view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      viewEpoch++;
       document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentView = btn.dataset.view;
@@ -1277,7 +1295,10 @@ function setupInteractions() {
         canvasCont.style.display = '';
         treePanel.classList.remove('active');
         if (currentView === 'modules') initModuleView();
-        else initSimulation();
+        else {
+          resetGraphLayout();
+          initSimulation();
+        }
       }
     });
   });
@@ -1420,7 +1441,9 @@ function escHtml(s) {
 
 // ── Module view ───────────────────────────────────────────────────────────────
 function initModuleView() {
+  const epoch = viewEpoch;
   const W = canvasEl.clientWidth, H = canvasEl.clientHeight;
+  transform = { x: 0, y: 0, scale: 1 };
   const moduleGroups = {};
   nodes.forEach(n => {
     const m = n.module || 'root';
@@ -1443,6 +1466,7 @@ function initModuleView() {
   });
   let alpha = 0.5;
   function tick() {
+    if (epoch !== viewEpoch || currentView !== 'modules') return;
     alpha *= 0.9;
     if (alpha < 0.01) { draw(); return; }
     nodes.forEach(n => {
